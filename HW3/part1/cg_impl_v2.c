@@ -23,19 +23,20 @@ void conj_grad(const int colidx[],
     int cgit, cgitmax = 25;
     double d, sum, rho, rho0, alpha, beta;
 
+    const int ncols = lastcol - firstcol + 1;
+    const int nrows = lastrow - firstrow + 1;
+
     rho = 0.0;
 
     //---------------------------------------------------------------------
     // Initialize the CG algorithm:
     //---------------------------------------------------------------------
-
 #pragma omp parallel for
     for (int j = 0; j < naa + 1; j++)
     {
         q[j] = 0.0;
         z[j] = 0.0;
         r[j] = x[j];
-        // p[j] = r[j];
         p[j] = x[j];
     }
 
@@ -44,7 +45,7 @@ void conj_grad(const int colidx[],
     // Now, obtain the norm of r: First, sum squares of r elements locally...
     //---------------------------------------------------------------------
 #pragma omp parallel for reduction(+:rho)
-    for (int j = 0; j < lastcol - firstcol + 1; j++)
+    for (int j = 0; j < ncols; j++)
     {
         rho = rho + r[j] * r[j];
     }
@@ -53,7 +54,6 @@ void conj_grad(const int colidx[],
     // The conj grad iteration loop
     //---->
     //---------------------------------------------------------------------
-
     for (cgit = 1; cgit <= cgitmax; cgit++)
     {
         //---------------------------------------------------------------------
@@ -68,7 +68,7 @@ void conj_grad(const int colidx[],
         //       The unrolled-by-8 version below is significantly faster
         //       on the Cray t3d - overall speed of code is 1.5 times faster.
 #pragma omp parallel for private(sum)
-        for (int j = 0; j < lastrow - firstrow + 1; j++)
+        for (int j = 0; j < nrows; j++)
         {
             sum = 0.0;
             for (int k = rowstr[j]; k < rowstr[j + 1]; k++)
@@ -83,7 +83,7 @@ void conj_grad(const int colidx[],
         //---------------------------------------------------------------------
         d = 0.0;
 #pragma omp parallel for reduction(+:d)
-        for (int j = 0; j < lastcol - firstcol + 1; j++)
+        for (int j = 0; j < ncols; j++)
         {
             d = d + p[j] * q[j];
         }
@@ -104,7 +104,7 @@ void conj_grad(const int colidx[],
         //---------------------------------------------------------------------
         rho = 0.0;
 #pragma omp parallel for reduction(+:rho)
-        for (int j = 0; j < lastcol - firstcol + 1; j++)
+        for (int j = 0; j < ncols; j++)
         {
             z[j] = z[j] + alpha * p[j];
             r[j] = r[j] - alpha * q[j];
@@ -124,7 +124,7 @@ void conj_grad(const int colidx[],
         // p = r + beta*p
         //---------------------------------------------------------------------
 #pragma omp parallel for
-        for (int j = 0; j < lastcol - firstcol + 1; j++)
+        for (int j = 0; j < ncols; j++)
         {
             p[j] = r[j] + beta * p[j];
         }
@@ -136,7 +136,7 @@ void conj_grad(const int colidx[],
     // The partition submatrix-vector multiply
     //---------------------------------------------------------------------
 #pragma omp parallel for private(d)
-    for (int j = 0; j < lastrow - firstrow + 1; j++)
+    for (int j = 0; j < nrows; j++)
     {
         d = 0.0;
         for (int k = rowstr[j]; k < rowstr[j + 1]; k++)
@@ -151,7 +151,7 @@ void conj_grad(const int colidx[],
     //---------------------------------------------------------------------
     sum = 0.0;
 #pragma omp parallel for reduction(+:sum) private(d)
-    for (int j = 0; j < lastcol - firstcol + 1; j++)
+    for (int j = 0; j < ncols; j++)
     {
         d = x[j] - r[j];
         sum = sum + d * d;
