@@ -21,7 +21,7 @@ void page_rank(Graph g, double *solution, double damping, double convergence)
 
     int nnodes = num_nodes(g);
     double equal_prob = 1.0 / nnodes;
-// #pragma omp parallel for
+#pragma omp parallel for
     for (int i = 0; i < nnodes; ++i)
     {
         solution[i] = equal_prob;   // score_old
@@ -57,11 +57,15 @@ void page_rank(Graph g, double *solution, double damping, double convergence)
     bool converged = false;
     double *score_new = new double[nnodes];
 
+    double damping_tmp = (1.0-damping) / nnodes;
+    double residual_tmp = damping / nnodes;
+
     while (!converged) {
+#pragma omp parallel for
         for (int i = 0; i < nnodes; i++) {
             score_new[i] = 0.0;
         }
-
+#pragma omp parallel for
         for (int i = 0; i < nnodes; i++) {
             double incoming_v_old_score_sum = 0.0;
             const Vertex *start = incoming_begin(g, i);
@@ -72,29 +76,28 @@ void page_rank(Graph g, double *solution, double damping, double convergence)
             score_new[i] += incoming_v_old_score_sum;
         }
 
+#pragma omp parallel for
         for (int i = 0; i < nnodes; i++) {
-            score_new[i] = (damping * score_new[i]) + (1.0-damping) / nnodes;
+            score_new[i] *= damping;
+            score_new[i] += damping_tmp;
         }
         
         double residual_p = 0.0;
+#pragma omp parallel for reduction(+ : residual_p)
         for (int i = 0; i < nnodes; i++) {
             if (outgoing_size(g, i) == 0) {
-                residual_p += damping * solution[i] / nnodes;
+                residual_p += solution[i] * residual_tmp;
             }
         }
+        
+        double global_diff = 0.0;
+#pragma omp parallel for reduction(+ : global_diff)
         for (int i = 0; i < nnodes; i++) {
             score_new[i] += residual_p;
-        }
-
-        double global_diff = 0.0;
-        for (int i = 0; i < nnodes; i++) {
             global_diff += abs(score_new[i] - solution[i]);
-        }
-        converged = (global_diff < convergence);
-
-        for (int i = 0; i < nnodes; i++) {
             solution[i] = score_new[i];
         }
+        converged = (global_diff < convergence);
     }
     delete score_new;
 }

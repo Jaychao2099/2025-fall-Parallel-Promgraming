@@ -13,12 +13,6 @@
 // damping:     page-rank algorithm's damping parameter
 // convergence: page-rank algorithm's convergence threshold
 //
-
-struct alignas(64) PaddedDouble {
-    double value;
-    char padding[64 - sizeof(double)];  // 填充到 64 bytes
-};
-
 void page_rank(Graph g, double *solution, double damping, double convergence)
 {
 
@@ -27,14 +21,10 @@ void page_rank(Graph g, double *solution, double damping, double convergence)
 
     int nnodes = num_nodes(g);
     double equal_prob = 1.0 / nnodes;
-
-    // 使用 aligned allocation
-    PaddedDouble *solution_pad = (PaddedDouble*)malloc(64 * nnodes * sizeof(PaddedDouble));
-    PaddedDouble *score_new = (PaddedDouble*)malloc(64 * nnodes * sizeof(PaddedDouble));
-    
 #pragma omp parallel for
-    for (int i = 0; i < nnodes; ++i) {
-        solution_pad[i].value = equal_prob;   // score_old
+    for (int i = 0; i < nnodes; ++i)
+    {
+        solution[i] = equal_prob;   // score_old
     }
 
     /*
@@ -65,48 +55,46 @@ void page_rank(Graph g, double *solution, double damping, double convergence)
        }
      */
     bool converged = false;
-    double damping_factor = (1.0-damping) / nnodes;
-    double residual_factor = damping / nnodes;
+    double *score_new = new double[nnodes];
+
+    double damping_tmp = (1.0-damping) / nnodes;
+    double residual_tmp = damping / nnodes;
 
     while (!converged) {
 #pragma omp parallel for
         for (int i = 0; i < nnodes; i++) {
-            double sum = 0.0;
+            double incoming_v_old_score_sum = 0.0;
             const Vertex *start = incoming_begin(g, i);
             const Vertex *end = incoming_end(g, i);
             for (const Vertex *v = start; v != end; v++) {
-                sum += solution_pad[*v].value / outgoing_size(g, *v);
+                incoming_v_old_score_sum += solution[*v] / outgoing_size(g, *v);
             }
-            score_new[i].value = damping * sum + damping_factor;
+            score_new[i] = incoming_v_old_score_sum * damping + damping_tmp;
         }
         
         double residual_p = 0.0;
         double global_diff = 0.0;
-        
-#pragma omp parallel reduction(+:residual_p, global_diff)
+#pragma omp parallel
 {
-    #pragma omp for
+// #pragma omp parallel for reduction(+ : residual_p)
+    #pragma omp for reduction(+ : residual_p)
         for (int i = 0; i < nnodes; i++) {
             if (outgoing_size(g, i) == 0) {
-                residual_p += solution_pad[i].value * residual_factor;
+                residual_p += solution[i] * residual_tmp;
             }
         }
-            
-    #pragma omp for
+        
+        // double global_diff = 0.0;
+// #pragma omp parallel for reduction(+ : global_diff)
+    #pragma omp for reduction(+ : global_diff)
         for (int i = 0; i < nnodes; i++) {
-            score_new[i].value += residual_p;
-            global_diff += fabs(score_new[i].value - solution_pad[i].value);
-            solution_pad[i].value = score_new[i].value;
+            score_new[i] += residual_p;
+            global_diff += abs(score_new[i] - solution[i]);
+            solution[i] = score_new[i];
         }
 }
 
         converged = (global_diff < convergence);
     }
-#pragma omp parallel for
-    for (int i = 0; i < nnodes; i++) {
-        solution[i] = solution_pad[i].value;
-    }
-    
-    free(solution_pad);
-    free(score_new);
+    delete score_new;
 }
