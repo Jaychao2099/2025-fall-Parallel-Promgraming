@@ -46,7 +46,7 @@ void top_down_step(Graph g, VertexSet *frontier, VertexSet *new_frontier, int *d
         int local_queue[LOCAL_QUEUE_SIZE];
         int local_rear = 0;
         
-    #pragma omp for schedule(static, 8) nowait
+    #pragma omp for schedule(dynamic, 512) nowait
         for (int i = 0; i < frontier->count; i++) {
             const int node = frontier->vertices[i];
             const int start_edge = g->outgoing_starts[node];

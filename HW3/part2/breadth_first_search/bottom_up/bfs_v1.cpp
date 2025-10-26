@@ -136,6 +136,36 @@ void bfs_top_down(Graph graph, solution *sol)
     vertex_set_destroy(&list2);
 }
 
+void bottom_up_step(Graph g, VertexSet *frontier, VertexSet *new_frontier, int *distances)
+{
+    // check vertex in frontier or not
+    bool in_frontier[g->num_nodes] = {false};
+    for (int i = 0; i < frontier->count; i++) {
+        in_frontier[frontier->vertices[i]] = true;
+    }
+
+    for (int i = 0; i < g->num_nodes; i++) {
+        // skip visited vertex
+        if (distances[i] != NOT_VISITED_MARKER) continue;
+
+        int start_edge = g->incoming_starts[i];
+        int end_edge = (i == g->num_nodes - 1) ? g->num_edges : g->incoming_starts[i + 1];
+
+        // 查看是否有任何父節點在當前 frontier 中
+        for (int edge = start_edge; edge < end_edge; edge++) {
+            int parent = g->incoming_edges[edge];
+
+            if (in_frontier[parent]) {
+                // 找到一個在 frontier 中的父節點，更新距離並加入 new_frontier
+                distances[i] = distances[parent] + 1;
+                int index = new_frontier->count++;
+                new_frontier->vertices[index] = i;
+                break; // 找到一個父節點就足夠了
+            }
+        }
+    }
+}
+
 void bfs_bottom_up(Graph graph, solution *sol)
 {
     // For PP students:
@@ -175,31 +205,7 @@ void bfs_bottom_up(Graph graph, solution *sol)
     {
         vertex_set_clear(new_frontier);
         
-        // check vertex in frontier or not
-        bool in_frontier[graph->num_nodes] = {false};
-        for (int i = 0; i < frontier->count; i++) {
-            in_frontier[frontier->vertices[i]] = true;
-        }
-
-        for (int i = 0; i < graph->num_nodes; i++) {
-            // skip visited vertex
-            if (sol->distances[i] != NOT_VISITED_MARKER) continue;
-
-            int start_edge = graph->incoming_starts[i];
-            int end_edge = (i == graph->num_nodes - 1) ? graph->num_edges : graph->incoming_starts[i + 1];
-
-            // attempt to add all neighbors to the new frontier
-            for (int edge = start_edge; edge < end_edge; edge++) {
-                int parent = graph->incoming_edges[edge];
-
-                if (in_frontier[parent]) {
-                    sol->distances[i] = sol->distances[parent] + 1;
-                    int index = new_frontier->count++;
-                    new_frontier->vertices[index] = i;
-                    break;
-                }
-            }
-        }
+        bottom_up_step(graph, frontier, new_frontier, sol->distances);
 
         // swap pointers
         VertexSet *tmp = frontier;
