@@ -5,8 +5,10 @@
 
 #include "../common/graph.h"
 
+// #define VERBOSE
+
 #ifdef VERBOSE
-#include "../common/CycleTimer.h"
+#include "../common/cycle_timer.h"
 #include <stdio.h>
 #endif // VERBOSE
 

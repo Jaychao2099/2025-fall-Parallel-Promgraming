@@ -32,27 +32,54 @@ void vertex_set_destroy(VertexSet *list)
     delete[] list->vertices;
 }
 
+// #define LOCAL_QUEUE_SIZE 2048
+// #define LOCAL_QUEUE_SIZE 4096
+#define LOCAL_QUEUE_SIZE 8192
+
 // Take one step of "top-down" BFS.  For each vertex on the frontier,
 // follow all outgoing edges, and add all neighboring vertices to the
 // new_frontier.
 void top_down_step(Graph g, VertexSet *frontier, VertexSet *new_frontier, int *distances)
 {
-#pragma omp parallel for schedule(static, 8)
-    for (int i = 0; i < frontier->count; i++) {
-        const int node = frontier->vertices[i];
-        const int start_edge = g->outgoing_starts[node];
-        const int end_edge = (node == g->num_nodes - 1) ? g->num_edges : g->outgoing_starts[node + 1];
-        const int next_dist = distances[node] + 1;
+    #pragma omp parallel
+    {
+        int local_queue[LOCAL_QUEUE_SIZE];
+        int local_rear = 0;
+        
+    #pragma omp for schedule(static, 8) nowait
+        for (int i = 0; i < frontier->count; i++) {
+            const int node = frontier->vertices[i];
+            const int start_edge = g->outgoing_starts[node];
+            const int end_edge = (node == g->num_nodes - 1) ? g->num_edges : g->outgoing_starts[node + 1];
+            const int next_dist = distances[node] + 1;
 
-        // attempt to add all neighbors to the new frontier
-        for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
-            const int outgoing = g->outgoing_edges[neighbor];
+            // attempt to add all neighbors to the new frontier
+            for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
+                const int outgoing = g->outgoing_edges[neighbor];
 
-            if (distances[outgoing] == NOT_VISITED_MARKER) {
-                if (__sync_bool_compare_and_swap(&distances[outgoing], NOT_VISITED_MARKER, next_dist)) {
-                    int index = __sync_fetch_and_add(&new_frontier->count, 1);
-                    new_frontier->vertices[index] = outgoing;
+                if (distances[outgoing] == NOT_VISITED_MARKER) {
+                    const int new_dist = distances[node] + 1;
+                    if (__sync_bool_compare_and_swap(&distances[outgoing], NOT_VISITED_MARKER, new_dist)) {
+                        local_queue[local_rear++] = outgoing;   // local ++, local fetch, don't need atomic
+                        
+                        // local queue full
+                        if (local_rear == LOCAL_QUEUE_SIZE) {
+                            const int index = __sync_fetch_and_add(&new_frontier->count, LOCAL_QUEUE_SIZE);
+                            for (int j = 0; j < LOCAL_QUEUE_SIZE; j++) {
+                                new_frontier->vertices[index + j] = local_queue[j];
+                            }
+                            local_rear = 0;
+                        }
+                    }
                 }
+            }
+        }
+
+        // handle remaining queue entries
+        if (local_rear > 0) {
+            int index = __sync_fetch_and_add(&new_frontier->count, local_rear);
+            for (int j = 0; j < local_rear; j++) {
+                new_frontier->vertices[index + j] = local_queue[j];
             }
         }
     }
@@ -74,6 +101,7 @@ void bfs_top_down(Graph graph, solution *sol)
     VertexSet *new_frontier = &list2;
 
     // initialize all nodes to NOT_VISITED
+#pragma omp parallel for schedule(static, 8)
     for (int i = 0; i < graph->num_nodes; i++)
         sol->distances[i] = NOT_VISITED_MARKER;
 

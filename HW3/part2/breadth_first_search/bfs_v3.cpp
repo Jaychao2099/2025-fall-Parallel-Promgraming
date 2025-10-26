@@ -5,8 +5,10 @@
 
 #include "../common/graph.h"
 
+// #define VERBOSE
+
 #ifdef VERBOSE
-#include "../common/CycleTimer.h"
+#include "../common/cycle_timer.h"
 #include <stdio.h>
 #endif // VERBOSE
 
@@ -35,37 +37,23 @@ void vertex_set_destroy(VertexSet *list)
 // new_frontier.
 void top_down_step(Graph g, VertexSet *frontier, VertexSet *new_frontier, int *distances)
 {
-#pragma omp parallel
-    #pragma omp single
-    {
-        int i = 0;
-        const int while_end = frontier->count;
-        while (i < while_end)
-        {
-            int node = frontier->vertices[i];
-            #pragma omp task firstprivate(node)
-            {
+#pragma omp parallel for schedule(static, 8)
+    for (int i = 0; i < frontier->count; i++) {
+        const int node = frontier->vertices[i];
+        const int start_edge = g->outgoing_starts[node];
+        const int end_edge = (node == g->num_nodes - 1) ? g->num_edges : g->outgoing_starts[node + 1];
+        const int next_dist = distances[node] + 1;
 
-                int start_edge = g->outgoing_starts[node];
-                int end_edge = (node == g->num_nodes - 1) ? g->num_edges : g->outgoing_starts[node + 1];
+        // attempt to add all neighbors to the new frontier
+        for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
+            const int outgoing = g->outgoing_edges[neighbor];
 
-                // attempt to add all neighbors to the new frontier
-                for (int neighbor = start_edge; neighbor < end_edge; neighbor++)
-                {
-                    int outgoing = g->outgoing_edges[neighbor];
-
-                    if (distances[outgoing] == NOT_VISITED_MARKER)
-                    {
-                        distances[outgoing] = distances[node] + 1;
-                #pragma omp atomic
-                {
-                        new_frontier->vertices[new_frontier->count] = outgoing;
-                        new_frontier->count++;
-                }
-                    }
+            if (distances[outgoing] == NOT_VISITED_MARKER) {
+                if (__sync_bool_compare_and_swap(&distances[outgoing], NOT_VISITED_MARKER, next_dist)) {
+                    int index = __sync_fetch_and_add(&new_frontier->count, 1);
+                    new_frontier->vertices[index] = outgoing;
                 }
             }
-            i++;
         }
     }
 }
@@ -86,7 +74,6 @@ void bfs_top_down(Graph graph, solution *sol)
     VertexSet *new_frontier = &list2;
 
     // initialize all nodes to NOT_VISITED
-#pragma omp parallel for
     for (int i = 0; i < graph->num_nodes; i++)
         sol->distances[i] = NOT_VISITED_MARKER;
 
