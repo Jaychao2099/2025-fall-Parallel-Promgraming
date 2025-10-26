@@ -51,15 +51,14 @@ void top_down_step(Graph g, VertexSet *frontier, VertexSet *new_frontier, int *d
             const int node = frontier->vertices[i];
             const int start_edge = g->outgoing_starts[node];
             const int end_edge = (node == g->num_nodes - 1) ? g->num_edges : g->outgoing_starts[node + 1];
-            const int next_dist = distances[node] + 1;
 
             // attempt to add all neighbors to the new frontier
             for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
                 const int outgoing = g->outgoing_edges[neighbor];
 
                 if (distances[outgoing] == NOT_VISITED_MARKER) {
-                    const int new_dist = distances[node] + 1;
-                    if (__sync_bool_compare_and_swap(&distances[outgoing], NOT_VISITED_MARKER, new_dist)) {
+                    const int next_dist = distances[node] + 1;
+                    if (__sync_bool_compare_and_swap(&distances[outgoing], NOT_VISITED_MARKER, next_dist)) {
                         local_queue[local_rear++] = outgoing;   // local ++, local fetch, don't need atomic
                         
                         // local queue full
