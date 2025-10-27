@@ -1,6 +1,7 @@
 #include "bfs.h"
 
 #include <cstdlib>
+#include <algorithm>
 #include <omp.h>
 
 #include "../common/graph.h"
@@ -50,7 +51,8 @@ void top_down_step(Graph g, VertexSet *frontier, VertexSet *new_frontier, int *d
         int local_queue[LOCAL_QUEUE_SIZE];
         int local_rear = 0;
         
-    #pragma omp for schedule(dynamic, SCHEDULE_SIZE) nowait
+    // #pragma omp for schedule(dynamic, SCHEDULE_SIZE) nowait
+    #pragma omp for schedule(static, 8) nowait
         for (int i = 0; i < frontier->count; i++) {
             const int node = frontier->vertices[i];
             const int start_edge = g->outgoing_starts[node];
@@ -154,6 +156,7 @@ void bottom_up_step(Graph g, VertexSet *frontier, VertexSet *new_frontier, int *
         int local_rear = 0;
 
     #pragma omp for schedule(dynamic, SCHEDULE_SIZE) nowait
+    // #pragma omp for schedule(static, 8) nowait
         for (int i = 0; i < g->num_nodes; i++) {
             if (distances[i] != NOT_VISITED_MARKER) continue;   // skip visited vertex
 
@@ -245,9 +248,23 @@ void bfs_bottom_up(Graph graph, solution *sol)
     vertex_set_destroy(&list2);
 }
 
-// void hybrid_step(Graph g, VertexSet *frontier, VertexSet *new_frontier, int *distances) {
-
-// }
+inline bool should_use_bottom_up(Graph g, VertexSet *frontier, int num_unvisited) {
+    // small
+    if (frontier->count < 50 || num_unvisited < 50) {
+        return false;
+    }
+    
+    // large frontier + has some unvisited ----> bottom-up
+    double frontier_ratio = (double)frontier->count / g->num_nodes;
+    double unvisited_ratio = (double)num_unvisited / g->num_nodes;
+    
+    if (frontier_ratio > 0.40 && unvisited_ratio > 0.007 || 
+        frontier_ratio > 0.20 && frontier_ratio < 0.60 && unvisited_ratio > 0.15) {
+        return true;
+    }
+    
+    return false;
+}
 
 void bfs_hybrid(Graph graph, solution *sol)
 {
@@ -268,40 +285,59 @@ void bfs_hybrid(Graph graph, solution *sol)
         sol->distances[i] = NOT_VISITED_MARKER;
     }
 
+    // root
     frontier->vertices[frontier->count++] = ROOT_NODE_ID;
     sol->distances[ROOT_NODE_ID] = 0;
-
+    
     int num_unvisited = graph->num_nodes - 1;
+
+#ifdef VERBOSE
+    int iteration = 0;
+    int td_count = 0, bu_count = 0;
+#endif
 
     while (frontier->count != 0)
     {
         vertex_set_clear(new_frontier);
 
-        // 簡單但有效的雙條件策略
-        // 條件1：frontier 佔比 5-50%
-        // 條件2：未訪問節點佔比 > 10%
-        double frontier_ratio = (double)frontier->count / graph->num_nodes;
-        double unvisited_ratio = (double)num_unvisited / graph->num_nodes;
+        bool use_bottom_up = should_use_bottom_up(graph, frontier, num_unvisited);
         
-        bool use_bottom_up = (frontier_ratio > 0.05) && 
-                             (frontier_ratio < 0.5) &&
-                             (unvisited_ratio > 0.1);
-        
+#ifdef VERBOSE
+        double start_time = CycleTimer::current_seconds();
+#endif
+
         if (use_bottom_up) {
             bottom_up_step(graph, frontier, new_frontier, sol->distances);
+#ifdef VERBOSE
+            bu_count++;
+#endif
         } else {
             top_down_step(graph, frontier, new_frontier, sol->distances);
+#ifdef VERBOSE
+            td_count++;
+#endif
         }
 
+#ifdef VERBOSE
+        double end_time = CycleTimer::current_seconds();
+        printf("Iter %3d: %s  frontier=%-10d unvisited=%-10d  %.10f sec\n",
+               iteration++, use_bottom_up ? "BU" : "TD",
+               frontier->count, num_unvisited, end_time - start_time);
+#endif
+
+        // update unvisited number
         num_unvisited -= new_frontier->count;
 
-        // swap pointers
+        // swap
         VertexSet *tmp = frontier;
         frontier = new_frontier;
         new_frontier = tmp;
     }
-    
-    // free memory
+
+#ifdef VERBOSE
+    printf("Total: %d top-down, %d bottom-up\n", td_count, bu_count);
+#endif
+
     vertex_set_destroy(&list1);
     vertex_set_destroy(&list2);
 }

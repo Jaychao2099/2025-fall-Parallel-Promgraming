@@ -245,10 +245,45 @@ void bfs_bottom_up(Graph graph, solution *sol)
     vertex_set_destroy(&list2);
 }
 
+// void hybrid_step(Graph g, VertexSet *frontier, VertexSet *new_frontier, int *distances) {
+
+// }
+
 void bfs_hybrid(Graph graph, solution *sol)
 {
     // For PP students:
     //
     // You will need to implement the "hybrid" BFS here as
     // described in the handout.
+    VertexSet list1;
+    VertexSet list2;
+    vertex_set_init(&list1, graph->num_nodes);
+    vertex_set_init(&list2, graph->num_nodes);
+    VertexSet *frontier = &list1;
+    VertexSet *new_frontier = &list2;
+
+    // initialize all nodes to NOT_VISITED
+#pragma omp parallel for schedule(static, 8)
+    for (int i = 0; i < graph->num_nodes; i++) {
+        sol->distances[i] = NOT_VISITED_MARKER;
+    }
+
+    frontier->vertices[frontier->count++] = ROOT_NODE_ID;
+    sol->distances[ROOT_NODE_ID] = 0;
+
+    while (frontier->count != 0)
+    {
+        vertex_set_clear(new_frontier);
+        if (frontier->count < 10000) top_down_step(graph, frontier, new_frontier, sol->distances);
+        else                         bottom_up_step(graph, frontier, new_frontier, sol->distances);
+
+        // swap pointers
+        VertexSet *tmp = frontier;
+        frontier = new_frontier;
+        new_frontier = tmp;
+    }
+    
+    // free memory
+    vertex_set_destroy(&list1);
+    vertex_set_destroy(&list2);
 }

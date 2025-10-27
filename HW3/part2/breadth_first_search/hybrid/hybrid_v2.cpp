@@ -271,11 +271,29 @@ void bfs_hybrid(Graph graph, solution *sol)
     frontier->vertices[frontier->count++] = ROOT_NODE_ID;
     sol->distances[ROOT_NODE_ID] = 0;
 
+    int num_unvisited = graph->num_nodes - 1;
+
     while (frontier->count != 0)
     {
         vertex_set_clear(new_frontier);
-        if (frontier->count < 10000) top_down_step(graph, frontier, new_frontier, sol->distances);
-        else                         bottom_up_step(graph, frontier, new_frontier, sol->distances);
+
+        // 簡單但有效的雙條件策略
+        // 條件1：frontier 佔比 5-50%
+        // 條件2：未訪問節點佔比 > 10%
+        double frontier_ratio = (double)frontier->count / graph->num_nodes;
+        double unvisited_ratio = (double)num_unvisited / graph->num_nodes;
+        
+        bool use_bottom_up = (frontier_ratio > 0.05) && 
+                             (frontier_ratio < 0.5) &&
+                             (unvisited_ratio > 0.1);
+        
+        if (use_bottom_up) {
+            bottom_up_step(graph, frontier, new_frontier, sol->distances);
+        } else {
+            top_down_step(graph, frontier, new_frontier, sol->distances);
+        }
+
+        num_unvisited -= new_frontier->count;
 
         // swap pointers
         VertexSet *tmp = frontier;
