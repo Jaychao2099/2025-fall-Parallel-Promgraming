@@ -38,47 +38,56 @@ int main(int argc, char **argv)
     int world_rank, world_size;
     // ---
 
+    MPI_Win win;
+
     // TODO: MPI init
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    int64_t number_in_circle;
+    int64_t number_in_circle = 0LL;
     uint32_t seed = (world_rank + 42069) ^ time(NULL);
-    int64_t all_result[world_size];
-
-    if (world_rank > 0)
+    
+    if (world_rank == 0)
     {
-        // TODO: MPI workers
-        MPI_Request req;
-        int64_t local_result = toss(tosses / world_size, seed);
-        MPI_Isend(&local_result, 1, MPI_LONG_LONG, 0, 0, MPI_COMM_WORLD, &req);
-        MPI_Wait(&req, MPI_STATUS_IGNORE);
-    }
-    else if (world_rank == 0)
-    {
-        // TODO: non-blocking MPI communication.
-        // Use MPI_Irecv, MPI_Wait or MPI_Waitall.
+        // Main
+        int64_t *all_result;
+        // Use MPI to allocate memory for the target window
+        MPI_Alloc_mem((long)(world_size * sizeof(int64_t)), MPI_INFO_NULL, (void *)&all_result);
+        for (int i = 0; i < world_size; i++) all_result[i] = 0; // init
 
-        // MPI_Request requests[];
+        // Create a window. Set the displacement unit to sizeof(int) to simplify the addressing at the originator processes
+        // int MPI_Win_create(void *base, MPI_Aint size, int disp_unit, MPI_Info info, MPI_Comm comm, MPI_Win *win)
+        MPI_Win_create(all_result, (long)(world_size * sizeof(int64_t)), sizeof(int64_t), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
 
-        // MPI_Waitall();
-        MPI_Request requests[world_size];
-        MPI_Status status[world_size];
-        number_in_circle = toss(tosses / world_size, seed);
+        all_result[0] = toss(tosses / world_size, seed);
 
-        requests[0] = MPI_REQUEST_NULL;     // for MPI_Waitall(world_size, ...
-        for (int i = 1; i < world_size; i++) {
-            MPI_Irecv(&all_result[i], 1, MPI_LONG_LONG, i, 0, MPI_COMM_WORLD, &requests[i]);
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        for (int i = 0; i < world_size; i++) {
+            number_in_circle += all_result[i];
         }
-        MPI_Waitall(world_size, requests, status);
+        MPI_Free_mem(all_result);
     }
+    else
+    {
+        // Workers
+        // Worker processes do not expose memory in the window
+        MPI_Win_create(NULL, 0, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+
+        // Register with the main
+        MPI_Win_lock(MPI_LOCK_SHARED, 0, 0, win);
+        int64_t local_result = toss(tosses / world_size, seed);
+        MPI_Put(&local_result, 1, MPI_LONG_LONG, 0, world_rank, 1, MPI_LONG_LONG, win);
+        MPI_Win_unlock(0, win);
+
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+
+    MPI_Win_free(&win);
 
     if (world_rank == 0)
     {
-        // TODO: PI result
-        for (int i = 1; i < world_size; i++) {
-            number_in_circle += all_result[i];
-        }
-        pi_result =  4.0 * number_in_circle / ((double)tosses);
+        // TODO: handle PI result
+        pi_result = 4.0 * number_in_circle / ((double)tosses);
 
         // --- DON'T TOUCH ---
         double end_time = MPI_Wtime();
