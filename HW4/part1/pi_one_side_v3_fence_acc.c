@@ -43,17 +43,17 @@ int main(int argc, char **argv)
     // TODO: MPI init
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    int64_t number_in_circle = 0LL;
+    // int64_t number_in_circle = 0LL;
     uint32_t seed = (world_rank + 42069) ^ time(NULL);
     
-    int64_t *all_result;
+    int64_t *total_result;
 
     if (world_rank == 0)
     {
         // Main
         // Use MPI to allocate memory for the target window
-        MPI_Alloc_mem((long)(world_size * sizeof(int64_t)), MPI_INFO_NULL, (void *)&all_result);
-        for (int i = 0; i < world_size; i++) all_result[i] = 0; // init
+        MPI_Alloc_mem(sizeof(int64_t), MPI_INFO_NULL, (void *)&total_result);
+        *total_result = 0; // init
 
         // Create a window. Set the displacement unit to sizeof(int) to simplify the addressing at the originator processes
         // int MPI_Win_create(void *base, MPI_Aint size, int disp_unit, MPI_Info info, MPI_Comm comm, MPI_Win *win)
@@ -65,27 +65,25 @@ int main(int argc, char **argv)
     MPI_Win_fence(0, win);      // start RMA access epoch
 
     int64_t local_result = toss(tosses / world_size, seed);
-    MPI_Put(&local_result, 1, MPI_LONG_LONG, 0, world_rank, 1, MPI_LONG_LONG, win);
+    MPI_Accumulate(&local_result, 1, MPI_LONG_LONG, 0, 0, 1, MPI_LONG_LONG, MPI_SUM, win);
     
     MPI_Win_fence(0, win);      // end RMA access epoch
-
-    MPI_Win_free(&win);
 
     if (world_rank == 0)
     {
         // TODO: handle PI result
-        for (int i = 0; i < world_size; i++) {
-            number_in_circle += all_result[i];
-        }
-        pi_result = 4.0 * number_in_circle / ((double)tosses);
+        // number_in_circle = *total_result;
+        pi_result = 4.0 * (*total_result) / ((double)tosses);
 
         // --- DON'T TOUCH ---
         double end_time = MPI_Wtime();
         printf("%lf\n", pi_result);
         printf("MPI running time: %lf Seconds\n", end_time - start_time);
         // ---
+        MPI_Free_mem(total_result);
     }
 
+    MPI_Win_free(&win);
     MPI_Finalize();
     return 0;
 }
