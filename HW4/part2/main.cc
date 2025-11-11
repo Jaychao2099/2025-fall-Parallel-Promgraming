@@ -65,7 +65,7 @@ int main(int argc, const char **argv)
         {
             for (int x = 0; x < l; ++x)
             {
-                in >> b_mat[(x * m) + y];
+                in >> b_mat[(x * m) + y];     // column-major!!!!!!!!!!!!!
             }
         }
     }
