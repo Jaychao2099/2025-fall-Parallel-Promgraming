@@ -2,15 +2,33 @@
 #include <cstring>
 #include <algorithm>
 
-// 全域變數用於存儲矩陣維度和本地資訊
+#pragma GCC optimize("O3", "unroll-loops")
+
+// 全域變數 矩陣維度, 本地資料
 static int g_n, g_m, g_l;
 static int g_my_rows;
 static int g_my_start_row;
 
-// Cache blocking 的 block size，根據 cache 調整
-static const int BLOCK_SIZE = 32;
+// 記憶體對齊到 cache line (64 bytes)
+inline int* aligned_alloc_int(size_t count) {
+    void* ptr = nullptr;
+    if (posix_memalign(&ptr, 64, count * sizeof(int)) != 0) {
+        return new int[count];
+    }
+    return static_cast<int*>(ptr);
+}
 
-// 計算每個 rank 應該處理的 col 範圍
+// 根據矩陣大小選擇最佳 block size
+inline int get_optimal_block_size(int n, int m, int l) {
+    int max_dim = std::max({n, m, l});
+    if (max_dim <= 500) {
+        return 32;  // 小矩陣：更好的 cache locality
+    } else {
+        return 96;  // 大矩陣：平衡 cache 利用率和 block 數量
+    }
+}
+
+// 計算每個 rank 應該處理的 row 範圍
 inline void compute_row_distribution(int n, int size, int rank, int &start_row, int &num_rows) {
     int rows_per_proc = n / size;
     int remainder = n % size;
@@ -50,13 +68,15 @@ void construct_matrices(
     MPI_Bcast(&g_m, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&g_l, 1, MPI_INT, 0, MPI_COMM_WORLD);
     
-    // 計算本地應該處理的 col
+    // 計算本地應該處理的 row
     compute_row_distribution(g_n, size, rank, g_my_start_row, g_my_rows);
     
     // 分配本地 A 矩陣記憶體
-    *a_mat_ptr = new int[g_my_rows * g_m];
+    // *a_mat_ptr = new int[g_my_rows * g_m];
+    // 使用對齊的記憶體分配
+    *a_mat_ptr = aligned_alloc_int(g_my_rows * g_m);
     
-    // 準備 Scatterv 所需的參數
+    // Scatterv 參數
     int *sendcounts = nullptr;
     int *displs = nullptr;
     
@@ -72,7 +92,7 @@ void construct_matrices(
         }
     }
     
-    // 分發 A 矩陣的 col
+    // 分發 A 矩陣的 row
     MPI_Scatterv(a_mat, sendcounts, displs, MPI_INT,
                  *a_mat_ptr, g_my_rows * g_m, MPI_INT,
                  0, MPI_COMM_WORLD);
@@ -83,16 +103,21 @@ void construct_matrices(
     }
     
     // 廣播 B 矩陣給所有 processes
-    *b_mat_ptr = new int[g_m * g_l];
+    // *b_mat_ptr = new int[g_m * g_l];
+    // B 矩陣也使用對齊記憶體
+    *b_mat_ptr = aligned_alloc_int(g_m * g_l);
     if (rank == 0) {
         memcpy(*b_mat_ptr, b_mat, g_m * g_l * sizeof(int));
     }
     MPI_Bcast(*b_mat_ptr, g_m * g_l, MPI_INT, 0, MPI_COMM_WORLD);
 }
 
-// 每個 process 獨立計算其負責的 column，然後收集結果
+// 每個 process 獨立計算其負責的 row，然後收集結果
 void matrix_multiply(
-    const int n, const int m, const int l, const int *a_mat, const int *b_mat, int *out_mat)
+    const int n, const int m, const int l, 
+    const int * __restrict__ a_mat, 
+    const int * __restrict__ b_mat, 
+    int * __restrict__ out_mat)
 {
     /* TODO: Perform matrix multiplication on a_mat and b_mat. Which are the matrices you've
      * constructed. The result should be stored in out_mat, which is a continuous memory placing n *
@@ -101,9 +126,14 @@ void matrix_multiply(
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    // 根據矩陣大小選擇最佳 block size
+    const int BLOCK_SIZE = get_optimal_block_size(g_n, g_m, g_l);
     
     // 分配本地結果矩陣
-    int *local_result = new int[g_my_rows * g_l];
+    // int *local_result = new int[g_my_rows * g_l];
+    // 使用對齊的記憶體存放結果
+    int *local_result = aligned_alloc_int(g_my_rows * g_l);
     memset(local_result, 0, g_my_rows * g_l * sizeof(int));
     
     // 使用 cache blocking 進行矩陣乘法
@@ -120,13 +150,14 @@ void matrix_multiply(
             for (int kk = 0; kk < g_m; kk += BLOCK_SIZE) {
                 int k_end = std::min(kk + BLOCK_SIZE, g_m);
                 
-                // 在這個 block 內進行計算
+                // 在 block 內進行計算
                 for (int i = ii; i < i_end; ++i) {
                     for (int j = jj; j < j_end; ++j) {
                         int sum = 0;
                         const int *a_row = &a_mat[i * g_m + kk];
                         const int *b_col = &b_mat[j * g_m + kk];
                         
+                        // #pragma GCC ivdep  // 沒有迴圈依賴
                         for (int k = kk; k < k_end; ++k) {
                             sum += a_row[k - kk] * b_col[k - kk];
                         }
@@ -137,7 +168,7 @@ void matrix_multiply(
         }
     }
     
-    // 準備 Gatherv 所需的參數
+    // Gatherv 參數
     int *recvcounts = nullptr;
     int *displs = nullptr;
     
