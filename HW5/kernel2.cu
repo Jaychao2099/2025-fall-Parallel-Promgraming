@@ -50,10 +50,11 @@ void host_fe(float upper_x,
 
     int *d_img;
     size_t pitch;   // how many byte in 1 row in physics
-    cudaMallocPitch(&d_img, &pitch, res_x*sizeof(int), res_y);  // 有 padding (最後有空白)
+    size_t width_bytes = res_x * sizeof(int);
+    cudaMallocPitch(&d_img, &pitch, width_bytes, res_y);  // 有 padding (最後有空白)
 
     int *pinned_img;
-    size_t size = res_x * res_y * sizeof(int);
+    size_t size = width_bytes * res_y;
     cudaHostAlloc(&pinned_img, size, cudaHostAllocDefault);
 
     dim3 blockSize(8, 8);
@@ -61,9 +62,9 @@ void host_fe(float upper_x,
 
     mandel_kernel<<<gridSize, blockSize>>>(lower_x, lower_y, step_x, step_y, d_img, pitch, res_x, res_y, max_iterations);
 
-    cudaMemcpy2D(pinned_img, res_x * sizeof(int),   // dst, dst pitch
+    cudaMemcpy2D(pinned_img, width_bytes,   // dst, dst pitch
                  d_img, pitch,                      // src, src pitch
-                 res_x * sizeof(int),       // 每 row 實際有效寬度
+                 width_bytes,       // 每 row 實際有效寬度
                  res_y, 
                  cudaMemcpyDeviceToHost);
 
