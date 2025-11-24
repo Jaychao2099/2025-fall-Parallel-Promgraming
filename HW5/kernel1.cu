@@ -2,29 +2,40 @@
 #include <cstdlib>
 #include <cuda.h>
 
-__global__ void mandel_kernel(float lowerX, float lowerY, float stepX, float stepY, int resX, int resY, int maxIterations, int *img)
+__global__ void mandel_kernel(float lower_x, float lower_y, float step_x, float step_y, int *img, int res_x, int res_y, int max_iterations)
 {
+    int thisX = blockIdx.x * blockDim.x + threadIdx.x;
+    int thisY = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (thisX >= res_x || thisY >= res_y) return;
+
     // To avoid error caused by the floating number, use the following pseudo code
     //
     // float x = lowerX + thisX * stepX;
     // float y = lowerY + thisY * stepY;
-    float x = lowerX + blockIdx.x * stepX;
-    float y = lowerY + blockIdx.y * stepY;
-    int idx = blockIdx.y * resX + blockIdx.x;
-    // Compute the Mandelbrot iteration count for (x, y)
-    int iteration = 0;
-    float zx = 0.0f;
-    float zy = 0.0f;
-    while (zx * zx + zy * zy < 4.0f && iteration < maxIterations) {
-        float temp = zx * zx - zy * zy + x;
-        zy = 2.0f * zx * zy + y;
-        zx = temp;
-        iteration++;
+
+    float x = lower_x + thisX * step_x;
+    float y = lower_y + thisY * step_y;
+
+    float c_x = x;
+    float c_y = y;
+
+    int i;
+    for (i = 0; i < max_iterations; ++i) {
+        if (c_x * c_x + c_y * c_y > 4.f)
+            break;
+
+        float new_c_x = (c_x * c_x) - (c_y * c_y);
+        float new_c_y = 2.f * c_x * c_y;
+        
+        c_x = x + new_c_x;
+        c_y = y + new_c_y;
     }
-    img[idx] = iteration;
+
+    img[thisY * res_x + thisX] = i;
 }
 
-// Host front-end function that allocates the memory and launches the GPU kernel
+// Host front-end function
 void host_fe(float upper_x,
              float upper_y,
              float lower_x,
@@ -37,21 +48,17 @@ void host_fe(float upper_x,
     float step_x = (upper_x - lower_x) / (float)res_x;
     float step_y = (upper_y - lower_y) / (float)res_y;
 
-    float step_x_d, step_y_d;
+    int *d_img;
+    size_t size = res_x * res_y * sizeof(int);
+    
+    cudaMalloc((void **)&d_img, size);
 
-    cudaMalloc(&step_x_d, sizeof(float));
-    cudaMemcpy(step_x_d, step_x, sizeof(float), cudaMemcpyHostToDevice);
-    cudaMalloc(&step_y_d, sizeof(float));
-    cudaMemcpy(step_y_d, step_y, sizeof(float), cudaMemcpyHostToDevice);
+    dim3 blockSize(8, 8);
+    dim3 gridSize((res_x + blockSize.x - 1) / blockSize.x, (res_y + blockSize.y - 1) / blockSize.y);
 
-    // int end_row = res_y / 2;
+    mandel_kernel<<<gridSize, blockSize>>>(lower_x, lower_y, step_x, step_y, d_img, res_x, res_y, max_iterations);
 
-    // for (int j = 0; j < end_row; j++) {
-    //     for (int i = 0; i < res_x; i++) {
-    //         float x = lower_x + (float)i * step_x;
-    //         float y = lower_y + (float)j * step_y;
+    cudaMemcpy(img, d_img, size, cudaMemcpyDeviceToHost);
 
-    //         // img[j * res_x + i] = mandel_kernel(x, y, step_x, step_y, res_x, res_y, max_iterations);
-    //     }
-    // }
+    cudaFree(d_img);
 }
