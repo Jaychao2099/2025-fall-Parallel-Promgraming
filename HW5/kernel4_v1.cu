@@ -3,7 +3,7 @@
 #include <cuda.h>
 
 __global__ 
-__launch_bounds__(256, 4) 
+__launch_bounds__(256, 10) 
 void mandel_kernel(float lower_x, float lower_y, 
                    float step_x, float step_y, 
                    int * __restrict__ img, 
@@ -29,9 +29,8 @@ void mandel_kernel(float lower_x, float lower_y,
         if (c_x_sq + c_y_sq > 4.f)
             break;
 
-        float temp_x = c_x_sq - c_y_sq + x;
         c_y = fmaf(2.0f * c_x, c_y, y);
-        c_x = temp_x;
+        c_x = c_x_sq - c_y_sq + x;
     }
 
     img[thisY * res_x + thisX] = i;

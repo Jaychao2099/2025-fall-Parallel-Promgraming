@@ -3,7 +3,6 @@
 #include <cuda.h>
 
 __global__ 
-__launch_bounds__(256, 4) 
 void mandel_kernel(float lower_x, float lower_y, 
                    float step_x, float step_y, 
                    int * __restrict__ img, 
@@ -13,28 +12,34 @@ void mandel_kernel(float lower_x, float lower_y,
     int thisX = blockIdx.x * blockDim.x + threadIdx.x;
     int thisY = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (thisX >= res_x || thisY >= res_y) return;
+    // Grid-Stride Loop
+    // 如果圖像中間很慢，所有 SM 都能分到一點中間的任務
+    int stride_y = gridDim.y * blockDim.y;
 
-    float x = fmaf(thisX, step_x, lower_x);
-    float y = fmaf(thisY, step_y, lower_y);
+    // 每個 thread 負責一條垂直線上的多個點
+    for (int yy = thisY; yy < res_y; yy += stride_y) {
+        if (thisX < res_x) {
+            float x = fmaf(thisX, step_x, lower_x);
+            float y = fmaf(yy   , step_y, lower_y);
+            
+            float c_x = x;
+            float c_y = y;
 
-    float c_x = x;
-    float c_y = y;
+            int i;
+            for (i = 0; i < max_iterations; ++i) {
+                float c_x_sq = c_x * c_x;
+                float c_y_sq = c_y * c_y;
 
-    int i;
-    for (i = 0; i < max_iterations; ++i) {
-        float c_x_sq = c_x * c_x;
-        float c_y_sq = c_y * c_y;
+                if (c_x_sq + c_y_sq > 4.f)
+                    break;
 
-        if (c_x_sq + c_y_sq > 4.f)
-            break;
+                c_y = fmaf(2.0f * c_x, c_y, y);
+                c_x = c_x_sq - c_y_sq + x;
+            }
 
-        float temp_x = c_x_sq - c_y_sq + x;
-        c_y = fmaf(2.0f * c_x, c_y, y);
-        c_x = temp_x;
+            img[yy * res_x + thisX] = i;
+        }
     }
-
-    img[thisY * res_x + thisX] = i;
 }
 
 // Host front-end function
@@ -55,7 +60,7 @@ void host_fe(float upper_x,
 
     cudaMalloc(&d_img, size);
 
-    dim3 blockSize(8, 8);
+    dim3 blockSize(8, 48);
     dim3 gridSize(res_x / blockSize.x, res_y / blockSize.y);
 
     mandel_kernel<<<gridSize, blockSize>>>(lower_x, lower_y, step_x, step_y, d_img, res_x, res_y, max_iterations);
