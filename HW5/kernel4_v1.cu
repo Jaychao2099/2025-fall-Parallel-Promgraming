@@ -3,6 +3,7 @@
 #include <cuda.h>
 
 __global__ 
+__launch_bounds__(256, 4) 
 void mandel_kernel(float lower_x, float lower_y, 
                    float step_x, float step_y, 
                    int * __restrict__ img, 
