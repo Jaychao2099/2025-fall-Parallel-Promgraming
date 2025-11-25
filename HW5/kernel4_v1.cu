@@ -2,34 +2,35 @@
 #include <cstdlib>
 #include <cuda.h>
 
-__global__ void mandel_kernel(float lower_x, float lower_y, float step_x, float step_y, int *img, int res_x, int res_y, int max_iterations)
+__global__ 
+void mandel_kernel(float lower_x, float lower_y, 
+                   float step_x, float step_y, 
+                   int * __restrict__ img, 
+                   const unsigned int res_x, const unsigned int res_y, 
+                   int max_iterations)
 {
     int thisX = blockIdx.x * blockDim.x + threadIdx.x;
     int thisY = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (thisX >= res_x || thisY >= res_y) return;
 
-    // To avoid error caused by the floating number, use the following pseudo code
-    //
-    // float x = lowerX + thisX * stepX;
-    // float y = lowerY + thisY * stepY;
-
-    float x = lower_x + thisX * step_x;
-    float y = lower_y + thisY * step_y;
+    float x = fmaf(thisX, step_x, lower_x);
+    float y = fmaf(thisY, step_y, lower_y);
 
     float c_x = x;
     float c_y = y;
 
     int i;
     for (i = 0; i < max_iterations; ++i) {
-        if (c_x * c_x + c_y * c_y > 4.f)
+        float c_x_sq = c_x * c_x;
+        float c_y_sq = c_y * c_y;
+
+        if (c_x_sq + c_y_sq > 4.f)
             break;
 
-        float new_c_x = (c_x * c_x) - (c_y * c_y);
-        float new_c_y = 2.f * c_x * c_y;
-        
-        c_x = x + new_c_x;
-        c_y = y + new_c_y;
+        float temp_x = c_x_sq - c_y_sq + x;
+        c_y = fmaf(2.0f * c_x, c_y, y);
+        c_x = temp_x;
     }
 
     img[thisY * res_x + thisX] = i;
@@ -40,7 +41,7 @@ void host_fe(float upper_x,
              float upper_y,
              float lower_x,
              float lower_y,
-             int *img,
+             int * __restrict__ img,
              int res_x,
              int res_y,
              int max_iterations)
@@ -48,13 +49,13 @@ void host_fe(float upper_x,
     float step_x = (upper_x - lower_x) / (float)res_x;
     float step_y = (upper_y - lower_y) / (float)res_y;
 
-    int *d_img;
-    size_t size = res_x * res_y * sizeof(int);
-    
-    cudaMalloc((void **)&d_img, size);
+    int *d_img = nullptr;
+    const size_t size = res_x * res_y * sizeof(int);
+
+    cudaMalloc(&d_img, size);
 
     dim3 blockSize(8, 8);
-    dim3 gridSize((res_x + blockSize.x - 1) / blockSize.x, (res_y + blockSize.y - 1) / blockSize.y);
+    dim3 gridSize(res_x / blockSize.x, res_y / blockSize.y);
 
     mandel_kernel<<<gridSize, blockSize>>>(lower_x, lower_y, step_x, step_y, d_img, res_x, res_y, max_iterations);
 

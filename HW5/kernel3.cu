@@ -2,6 +2,9 @@
 #include <cstdlib>
 #include <cuda.h>
 
+#define GROUPSIZE_X 160
+#define GROUPSIZE_Y 120
+
 __global__ void mandel_kernel(float lower_x, float lower_y, float step_x, float step_y, int *img, size_t pitch, int res_x, int res_y, int max_iterations)
 {
     // Grid-Stride Loop (Y), 每次跳躍 "整個 Grid 的高度"
@@ -58,7 +61,8 @@ void host_fe(float upper_x,
     cudaHostAlloc(&pinned_img, size, cudaHostAllocDefault);
 
     dim3 blockSize(8, 8);
-    dim3 gridSize((res_x) / blockSize.x, (res_y) / blockSize.y);
+    // dim3 gridSize((res_x) / blockSize.x, (res_y) / blockSize.y);
+    dim3 gridSize(GROUPSIZE_X, GROUPSIZE_Y);
 
     mandel_kernel<<<gridSize, blockSize>>>(lower_x, lower_y, step_x, step_y, d_img, pitch, res_x, res_y, max_iterations);
 
