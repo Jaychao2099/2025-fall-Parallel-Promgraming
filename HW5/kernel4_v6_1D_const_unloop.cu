@@ -13,14 +13,12 @@ __constant__ int c_res_x;
 __constant__ int c_total_res;
 __constant__ int c_max_iterations;
 
-#define BLOCK_SIZE 256
+// #define c_res_x 1600
+// #define total_res 1920000
 
 __global__ 
 void mandel_kernel(int * __restrict__ img)
 {
-    // Shared Memory Buffering, 比寫入 Global Memory 快
-    __shared__ int s_cache[BLOCK_SIZE];
-
     // 1D index，確保 Memory Coalescing, 是 CUDA 寫入記憶體最快的方式
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     
@@ -30,8 +28,6 @@ void mandel_kernel(int * __restrict__ img)
     // 在 max_iter-bound 的 kernel 中影響極小
     int r_x = idx % c_res_x;
     int r_y = idx / c_res_x;
-    
-    int tid = threadIdx.x;
 
     float x = fmaf(r_x, c_step_x, c_lower_x);
     float y = fmaf(r_y, c_step_y, c_lower_y);
@@ -44,9 +40,9 @@ void mandel_kernel(int * __restrict__ img)
     float c_y2 = c_y * c_y;
 
     int k = 0;
-    const int max_iter = c_max_iterations;
+    int max_iter = c_max_iterations;
 
-    // Manual Loop Unrolling, 減少 (k < max_iter )的檢查次數
+    // Manual Loop Unrolling, 減少 (k < max_iter) 的檢查次數
     while (k < max_iter) {
         #define ITER_STEP \
             if (c_x2 + c_y2 > 4.0f) { goto done; } \
@@ -78,13 +74,7 @@ void mandel_kernel(int * __restrict__ img)
 
 done:
     if (k > max_iter) k = max_iter;
-
-    // 先寫入 Shared Memory
-    s_cache[tid] = k;
-    __syncthreads();
-
-    // 一次性寫回 Global Memory
-    img[idx] = s_cache[tid];
+    img[idx] = k;
 }
 
 // Host front-end function
@@ -103,16 +93,15 @@ void host_fe(float upper_x,
     // 用 static, 只在第一次呼叫或解析度改變時分配
     static int *d_img = nullptr;
 
-    const size_t total_res = 1920000;
+    const size_t total_res = res_x * res_y;
     
-    size_t size = res_x * res_y * sizeof(int);
+    size_t size = total_res * sizeof(int);
 
     if (d_img == nullptr) {
         cudaMalloc(&d_img, size);
     }
 
     // 更新 Constant Memory
-    // 雖然每次呼叫都 copy 有一點點 overhead，但相對於計算量可忽略
     cudaMemcpyToSymbol(c_lower_x, &lower_x, sizeof(float));
     cudaMemcpyToSymbol(c_lower_y, &lower_y, sizeof(float));
     cudaMemcpyToSymbol(c_step_x, &step_x, sizeof(float));
@@ -122,9 +111,8 @@ void host_fe(float upper_x,
     cudaMemcpyToSymbol(c_total_res, &total_res, sizeof(int));
     cudaMemcpyToSymbol(c_max_iterations, &max_iterations, sizeof(int));
 
-    int total_pixels = res_x * res_y;
-    int blockSize = BLOCK_SIZE;
-    int gridSize = total_pixels / blockSize;
+    int blockSize = 512;
+    int gridSize = total_res / blockSize;
 
     mandel_kernel<<<gridSize, blockSize>>>(d_img);
 
