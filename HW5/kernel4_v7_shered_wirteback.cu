@@ -13,21 +13,25 @@ __constant__ int c_res_x;
 __constant__ int c_total_res;
 __constant__ int c_max_iterations;
 
-// #define c_res_x 1600
-// #define total_res 1920000
+#define BLOCK_SIZE 256
 
 __global__ 
 void mandel_kernel(int * __restrict__ img)
 {
+    // Shared Memory Buffering, 比寫入 Global Memory 快
+    __shared__ int s_cache[BLOCK_SIZE];
+
     // 1D index，確保 Memory Coalescing, 是 CUDA 寫入記憶體最快的方式
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (idx >= c_total_res) return;
     
     // 直接計算 x, y 坐標, 相比於 2D Block 造成的潛在 Memory 分歧，1D 帶來的存取優勢更大
     // 在 max_iter-bound 的 kernel 中影響極小
     int r_x = idx % c_res_x;
     int r_y = idx / c_res_x;
-
-    if (idx >= c_total_res) return;
+    
+    int tid = threadIdx.x;
 
     float x = fmaf(r_x, c_step_x, c_lower_x);
     float y = fmaf(r_y, c_step_y, c_lower_y);
@@ -40,9 +44,9 @@ void mandel_kernel(int * __restrict__ img)
     float c_y2 = c_y * c_y;
 
     int k = 0;
-    int max_iter = c_max_iterations;
+    const int max_iter = c_max_iterations;
 
-    // Manual Loop Unrolling, 減少 "k < max_iter" 的檢查次數
+    // Manual Loop Unrolling, 減少 (k < max_iter )的檢查次數
     while (k < max_iter) {
         #define ITER_STEP \
             if (c_x2 + c_y2 > 4.0f) { goto done; } \
@@ -74,7 +78,13 @@ void mandel_kernel(int * __restrict__ img)
 
 done:
     if (k > max_iter) k = max_iter;
-    img[idx] = k;
+
+    // 先寫入 Shared Memory
+    s_cache[tid] = k;
+    __syncthreads();
+
+    // 一次性寫回 Global Memory
+    img[idx] = s_cache[tid];
 }
 
 // Host front-end function
@@ -113,7 +123,7 @@ void host_fe(float upper_x,
     cudaMemcpyToSymbol(c_max_iterations, &max_iterations, sizeof(int));
 
     int total_pixels = res_x * res_y;
-    int blockSize = 512;
+    int blockSize = BLOCK_SIZE;
     int gridSize = total_pixels / blockSize;
 
     mandel_kernel<<<gridSize, blockSize>>>(d_img);

@@ -12,15 +12,16 @@ void mandel_kernel(float lower_x, float lower_y,
     int thisX = blockIdx.x * blockDim.x + threadIdx.x;
     int thisY = blockIdx.y * blockDim.y + threadIdx.y;
 
-    // Grid-Stride Loop
-    // 如果圖像中間很慢，所有 SM 都能分到一點中間的任務
-    int stride_y = gridDim.y * blockDim.y;
+    int *ptr = &img[thisY * res_x];
 
-    // 每個 thread 負責一條垂直線上的多個點
-    for (int yy = thisY; yy < res_y; yy += stride_y) {
-        if (thisX < res_x) {
-            float x = fmaf(thisX, step_x, lower_x);
-            float y = fmaf(yy   , step_y, lower_y);
+    // Grid-Stride Loop
+    int stride_x = gridDim.x * blockDim.x;
+
+    // 每個 thread 負責一條水平線上的多個點
+    for (int xx = thisX; xx < res_x; xx += stride_x) {
+        if (thisY < res_y) {
+            float x = fmaf(xx   , step_x, lower_x);
+            float y = fmaf(thisY, step_y, lower_y);
             
             float c_x = x;
             float c_y = y;
@@ -37,7 +38,8 @@ void mandel_kernel(float lower_x, float lower_y,
                 c_x = c_x_sq - c_y_sq + x;
             }
 
-            img[yy * res_x + thisX] = i;
+            img[thisY * res_x + xx] = i;    // 保留反而更快???
+            ptr[xx] = i;
         }
     }
 }
@@ -60,7 +62,7 @@ void host_fe(float upper_x,
 
     cudaMalloc(&d_img, size);
 
-    dim3 blockSize(8, 48);
+    dim3 blockSize(64, 8);
     dim3 gridSize(res_x / blockSize.x, res_y / blockSize.y);
 
     mandel_kernel<<<gridSize, blockSize>>>(lower_x, lower_y, step_x, step_y, d_img, res_x, res_y, max_iterations);

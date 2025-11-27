@@ -12,6 +12,8 @@ void mandel_kernel(float lower_x, float lower_y,
     int thisX = blockIdx.x * blockDim.x + threadIdx.x;
     int thisY = blockIdx.y * blockDim.y + threadIdx.y;
 
+    int *ptr = &img[thisX];
+
     // Grid-Stride Loop
     // 如果圖像中間很慢，所有 SM 都能分到一點中間的任務
     int stride_y = gridDim.y * blockDim.y;
@@ -37,7 +39,8 @@ void mandel_kernel(float lower_x, float lower_y,
                 c_x = c_x_sq - c_y_sq + x;
             }
 
-            img[yy * res_x + thisX] = i;
+            // img[yy * res_x + thisX] = i;
+            ptr[yy * res_x] = i;
         }
     }
 }
