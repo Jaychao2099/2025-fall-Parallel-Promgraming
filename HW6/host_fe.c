@@ -13,8 +13,8 @@ void host_fe(int filter_width,
              cl_context *context,
              cl_program *program)
 {
-    int image_size = image_width * image_height;
-    int filter_size = filter_width * filter_width;
+    int image_size = image_width * image_height * sizeof(float);
+    int filter_size = filter_width * filter_width * sizeof(float);
     // cl_int ciErrNum;
 
     // comand queue
