@@ -26,8 +26,8 @@ void host_fe(int filter_width,
     cl_mem output_buffer_d = clCreateBuffer(*context, CL_MEM_WRITE_ONLY, image_size, NULL, NULL);
 
     // move to device
+    clEnqueueWriteBuffer(queue, filter_buffer_d, CL_FALSE, 0, filter_size, (void *)filter, 0, NULL,  NULL);
     clEnqueueWriteBuffer(queue, input_buffer_d, CL_TRUE, 0, image_size, (void *)input_image, 0, NULL,  NULL);
-    clEnqueueWriteBuffer(queue, filter_buffer_d, CL_TRUE, 0, filter_size, (void *)filter, 0, NULL,  NULL);
 
     // kernel
     cl_kernel kernel = clCreateKernel(*program, "convolution", NULL);
@@ -37,10 +37,11 @@ void host_fe(int filter_width,
     clSetKernelArg(kernel, 3, sizeof(int), (void*)&image_width);
     clSetKernelArg(kernel, 4, sizeof(float*), (void*)&input_buffer_d);
     clSetKernelArg(kernel, 5, sizeof(float*), (void*)&output_buffer_d);
+    clSetKernelArg(kernel, 6, filter_size, NULL);   // local
 
     // run
     // 600 * 400
-    size_t localws[2] = {20,20};
+    size_t localws[2] = {25,25};
     size_t globalws[2] = {image_width, image_height};
     clEnqueueNDRangeKernel(queue, kernel, 2, 0, globalws, localws, 0, NULL, NULL);
 

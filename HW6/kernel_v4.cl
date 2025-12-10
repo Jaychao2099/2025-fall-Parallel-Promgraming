@@ -54,12 +54,17 @@ __kernel void convolution_f1(
     int k_start = (-halffilter_size + iy >= 0) ? -halffilter_size : 0;
     int k_end = (halffilter_size + iy < image_height) ? halffilter_size : (halffilter_size + iy - image_height - 1);
     int l_start = (-halffilter_size + ix >= 0) ? -halffilter_size : 0;
-    int l_end = (halffilter_size + ix < image_width) ? halffilter_size : (halffilter_size + ix - image_width - 1);
+    // int l_end = (halffilter_size + ix < image_width) ? halffilter_size : (halffilter_size + ix - image_width - 1);
 
     for (int k = k_start; k <= k_end; k++) {
-        for (int l = l_start; l <= l_end; l++) {
-            sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_1[((k + halffilter_size) * 7) + l + halffilter_size];
-        }
+        int l = l_start;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_1[((k + halffilter_size) * 7) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_1[((k + halffilter_size) * 7) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_1[((k + halffilter_size) * 7) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_1[((k + halffilter_size) * 7) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_1[((k + halffilter_size) * 7) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_1[((k + halffilter_size) * 7) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_1[((k + halffilter_size) * 7) + l + halffilter_size];
     }
     output_image[(iy * image_width) + ix] = sum;
 }
@@ -80,12 +85,13 @@ __kernel void convolution_f2(
     int k_start = (-halffilter_size + iy >= 0) ? -halffilter_size : 0;
     int k_end = (halffilter_size + iy < image_height) ? halffilter_size : (halffilter_size + iy - image_height - 1);
     int l_start = (-halffilter_size + ix >= 0) ? -halffilter_size : 0;
-    int l_end = (halffilter_size + ix < image_width) ? halffilter_size : (halffilter_size + ix - image_width - 1);
+    // int l_end = (halffilter_size + ix < image_width) ? halffilter_size : (halffilter_size + ix - image_width - 1);
 
     for (int k = k_start; k <= k_end; k++) {
-        for (int l = l_start; l <= l_end; l++) {
-            sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_2[((k + halffilter_size) * 3) + l + halffilter_size];
-        }
+        int l = l_start;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_2[((k + halffilter_size) * 3) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_2[((k + halffilter_size) * 3) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_2[((k + halffilter_size) * 3) + l + halffilter_size];
     }
     output_image[(iy * image_width) + ix] = sum;
 }
@@ -106,12 +112,15 @@ __kernel void convolution_f3(
     int k_start = (-halffilter_size + iy >= 0) ? -halffilter_size : 0;
     int k_end = (halffilter_size + iy < image_height) ? halffilter_size : (halffilter_size + iy - image_height - 1);
     int l_start = (-halffilter_size + ix >= 0) ? -halffilter_size : 0;
-    int l_end = (halffilter_size + ix < image_width) ? halffilter_size : (halffilter_size + ix - image_width - 1);
+    // int l_end = (halffilter_size + ix < image_width) ? halffilter_size : (halffilter_size + ix - image_width - 1);
 
     for (int k = k_start; k <= k_end; k++) {
-        for (int l = l_start; l <= l_end; l++) {
-            sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_3[((k + halffilter_size) * 5) + l + halffilter_size];
-        }
+        int l = l_start;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_3[((k + halffilter_size) * 5) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_3[((k + halffilter_size) * 5) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_3[((k + halffilter_size) * 5) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_3[((k + halffilter_size) * 5) + l + halffilter_size]; l++;
+        sum += input_image[((iy + k) * image_width) + ix + l] * FILTER_3[((k + halffilter_size) * 5) + l + halffilter_size];
     }
     output_image[(iy * image_width) + ix] = sum;
 }
