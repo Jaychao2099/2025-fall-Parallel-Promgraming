@@ -3,3 +3,8 @@
 *.xls
 *.exe
 *.zip
+*.tar.gz
+*.gz
+*.rar
+*.7z
+.vscode/
